@@ -47,12 +47,18 @@ The ArchPal application uses Streamlit secrets to securely store sensitive confi
 
 **Important:** This generates a long-lived access token. In production, consider using refresh tokens for better security.
 
-### Step 4: Set Up Dropbox Folder (Optional)
+### Step 4: Set Up Dropbox Folders
 
-If you want to upload files to a specific folder instead of the app folder:
+The application exports two types of files to separate folders:
 
-1. Create a folder in your Dropbox (e.g., "ArchPal Exports")
-2. Note the folder path (e.g., "/ArchPal Exports" - must start with `/`)
+1. **Anonymized Conversation Data** - Full conversation with names replaced by `[NAME]`
+2. **Identifier Data** - Single row CSV with first name, last name, and unique identifier
+
+Create two folders in your Dropbox:
+- One for anonymized conversations (e.g., "/ArchPal User Sessions Anonymous Exports")
+- One for identifier files (e.g., "/ArchPal User Sessions Identifiers")
+
+Note the folder paths (must start with `/`)
 
 ### Step 5: Configure Secrets
 
@@ -70,8 +76,12 @@ If you want to upload files to a specific folder instead of the app folder:
    # Dropbox Access Token
    dropbox_access_token = "your-dropbox-access-token-here"
 
-   # Dropbox Folder Path (optional - if not provided, files go to app folder)
-   dropbox_folder_path = "/ArchPal Exports"
+   # Dropbox Folder Paths (required)
+   # Folder 1: Anonymized conversation data (names replaced with [NAME])
+   dropbox_folder_path1 = "/ArchPal User Sessions Anonymous Exports"
+   
+   # Folder 2: Identifier files (first_name, last_name, unique_id)
+   dropbox_folder_path2 = "/ArchPal User Sessions Identifiers"
    ```
 
 #### For Streamlit Cloud:
@@ -90,24 +100,45 @@ If you want to upload files to a specific folder instead of the app folder:
 
 **Important:** Secrets added via the Streamlit Cloud interface are encrypted and stored securely. They are never exposed in your repository or logs.
 
-## CSV Format
+## CSV Export Format
 
-The exported CSV includes the following columns:
+The application exports **two separate CSV files** for each session:
+
+### 1. Anonymized Conversation CSV (Folder 1)
+
+This file contains the full conversation with student names replaced by `[NAME]` for privacy. It includes the following columns:
 
 - `Unique Identifier`: UUID assigned to the student session
-- `userMessage`: The student's message
+- `College Year`: Student's college year level
+- `Major`: Student's major
+- `userMessage`: The student's message (with names anonymized)
 - `userMessageTime`: When the student message was sent (YYYY-MM-DD HH:MM:SS)
-- `AIMessage`: ArchPal's response
+- `AIMessage`: ArchPal's response (with names anonymized)
 - `AIMessageTime`: When ArchPal's response was sent (YYYY-MM-DD HH:MM:SS)
 
-## File Naming
-
-Files are automatically named with the format:
+**File naming format:**
 ```
-{last_name}_{first_name}_Session{session_number}.csv
+{unique_id}_Session{session_number}.csv
 ```
 
-Example: `Doe_John_Session001.csv`
+Example: `a1b2c3d4-e5f6-7890-abcd-ef1234567890_Session1.csv`
+
+### 2. Identifier CSV (Folder 2)
+
+This file contains a single row with identifying information for matching purposes. It includes the following columns:
+
+- `first_name`: Student's first name
+- `last_name`: Student's last name
+- `unique_id`: UUID assigned to the student session (matches the conversation file)
+
+**File naming format:**
+```
+{unique_id}_identifier.csv
+```
+
+Example: `a1b2c3d4-e5f6-7890-abcd-ef1234567890_identifier.csv`
+
+**Note:** Both files share the same `unique_id`, allowing them to be matched while keeping conversation data anonymized.
 
 ## Testing
 
@@ -116,10 +147,13 @@ To test the export feature:
 1. Fill out the startup form with student information
 2. Have a conversation with ArchPal
 3. Click the "Export Chat" button
-4. Verify:
-   - CSV downloads correctly
-   - File appears in your Dropbox folder (if configured)
-   - Success message shows (files are uploaded silently)
+4. Review and accept the consent form
+5. Verify:
+   - Success message appears
+   - Two CSV files are uploaded to Dropbox:
+     - Anonymized conversation file in `dropbox_folder_path1`
+     - Identifier file in `dropbox_folder_path2`
+   - Both files share the same `unique_id` for matching
 
 ## Troubleshooting
 
@@ -130,12 +164,13 @@ To test the export feature:
 ### Error: "Could not upload to Dropbox"
 - Check that your access token is valid
 - Verify the Dropbox API app has the correct permissions (`files.content.write`)
-- Check that the folder path exists (if using `dropbox_folder_path`)
+- Check that both folder paths exist (`dropbox_folder_path1` and `dropbox_folder_path2`)
 
-### Files not appearing in folder
-- Verify the folder path is correct (must start with `/`)
-- Make sure the folder exists in your Dropbox
-- Check that your app has access to the specified folder
+### Files not appearing in folders
+- Verify both folder paths are correct (must start with `/`)
+- Make sure both folders exist in your Dropbox
+- Check that your app has access to both specified folders
+- Verify that both `dropbox_folder_path1` and `dropbox_folder_path2` are configured in secrets
 
 ### Access token issues
 - Access tokens can expire - generate a new one from your Dropbox app console
