@@ -13,28 +13,37 @@ import time
 ICON_PATH = os.path.join(os.path.dirname(__file__), "figs", "icon.jpg")
 LOGO_PATH = os.path.join(os.path.dirname(__file__), "figs", "logo.png")
 
+# Cache for secrets to avoid repeated access
+_secrets_cache = None
+
+def get_secrets():
+    """Get cached secrets to avoid repeated access"""
+    global _secrets_cache
+    if _secrets_cache is None:
+        _secrets_cache = st.secrets
+    return _secrets_cache
+
 def initialize_session_state():
     """Initialize all session state variables with default values"""
-    if "student_info" not in st.session_state:
-        st.session_state["student_info"] = None
-    if "messages" not in st.session_state:
-        st.session_state["messages"] = []
-    if "message_log" not in st.session_state:
-        st.session_state["message_log"] = []
-    if "admin_logged_in" not in st.session_state:
-        st.session_state["admin_logged_in"] = False
-    if "show_admin_login" not in st.session_state:
-        st.session_state["show_admin_login"] = False
-    if "admin_system_prompt" not in st.session_state:
-        st.session_state["admin_system_prompt"] = None
-    if "admin_role" not in st.session_state:
-        st.session_state["admin_role"] = None
-    if "show_export_consent" not in st.session_state:
-        st.session_state["show_export_consent"] = False
-    if "consent_signed" not in st.session_state:
-        st.session_state["consent_signed"] = False
-    if "data_privacy_acknowledged" not in st.session_state:
-        st.session_state["data_privacy_acknowledged"] = False
+    defaults = {
+        "student_info": None,
+        "messages": [],
+        "message_log": [],
+        "admin_logged_in": False,
+        "show_admin_login": False,
+        "admin_system_prompt": None,
+        "admin_role": None,
+        "show_export_consent": False,
+        "consent_signed": False,
+        "data_privacy_acknowledged": False,
+        "chat_model": None,
+        "chat_model_config": None,
+        "dropbox_client": None,
+        "default_system_prompt": None
+    }
+    for key, default_value in defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = default_value
 
 # Initialize session state
 initialize_session_state()
@@ -55,7 +64,8 @@ if st.session_state["student_info"] is None:
 
         if submitted:
             # Get the correct password from secrets
-            correct_password = st.secrets.get("session_password", "")
+            secrets = get_secrets()
+            correct_password = secrets.get("session_password", "")
 
             # Trim trailing spaces from all inputs except password
             first_name = first_name.strip() if first_name else first_name
@@ -90,9 +100,12 @@ major = student_info["major"]
 session_number = student_info["session_number"]
 unique_id = student_info["unique_id"]
 
-# Build default system prompt with student context
-system_prompt_from_secrets = st.secrets.get('SYSTEM_PROMPT', '')
-default_system_prompt_full = f"""You are ArchPal, UGA's writing coach and friendly helpful companion. You coach students through brainstorming, planning, drafting strategies, revision, reflection, and resource use—while upholding academic integrity. You do not write or substantially edit assignment prose. Instead, you help students grow their own writing skills by serving as a companion to their own process and work.
+# Build default system prompt with student context (only if not cached or student info changed)
+def build_default_system_prompt(first_name, last_name, college_year, major):
+    """Build default system prompt with student context"""
+    secrets = get_secrets()
+    system_prompt_from_secrets = secrets.get('SYSTEM_PROMPT', '')
+    return f"""You are ArchPal, UGA's writing coach and friendly helpful companion. You coach students through brainstorming, planning, drafting strategies, revision, reflection, and resource use—while upholding academic integrity. You do not write or substantially edit assignment prose. Instead, you help students grow their own writing skills by serving as a companion to their own process and work.
 
 {system_prompt_from_secrets}
 
@@ -102,11 +115,19 @@ Student Information:
 - Major: {major}
 """
 
+# Cache default system prompt in session state
+if st.session_state["default_system_prompt"] is None:
+    st.session_state["default_system_prompt"] = build_default_system_prompt(
+        first_name, last_name, college_year, major
+    )
+default_system_prompt_full = st.session_state["default_system_prompt"]
+
 # Admin login function
 def check_admin_credentials(username, password):
     """Check if provided credentials match admin credentials from secrets"""
-    admin_username = st.secrets['admin_username']
-    admin_password = st.secrets['admin_password']
+    secrets = get_secrets()
+    admin_username = secrets['admin_username']
+    admin_password = secrets['admin_password']
     return username == admin_username and password == admin_password
 
 # Admin login overlay
@@ -142,7 +163,8 @@ def show_admin_controls():
     st.markdown("### ⚙️ Admin Controls")
     
     # Get API key from secrets
-    anthropic_api_key = st.secrets['anthropic_api_key']
+    secrets = get_secrets()
+    anthropic_api_key = secrets['anthropic_api_key']
     st.info("✅ API key configured via secrets")
     
     # Simple defaults - admin can customize as needed
@@ -168,6 +190,10 @@ def show_admin_controls():
         # Clear conversation history to reinitialize LLM with new prompt
         st.session_state["messages"] = []
         st.session_state["message_log"] = []
+        
+        # Invalidate chat model cache to force recreation with new settings
+        st.session_state["chat_model"] = None
+        st.session_state["chat_model_config"] = None
         
         st.success("✅ Settings saved! Conversation history cleared. The LLM will use the new system prompt and role.")
         st.rerun()
@@ -270,9 +296,18 @@ def create_identifier_csv(first_name, last_name, unique_id):
     output.close()
     return csv_string
 
+def get_dropbox_client():
+    """Get or create cached Dropbox client"""
+    if st.session_state["dropbox_client"] is None:
+        secrets = get_secrets()
+        dropbox_token = secrets["dropbox_access_token"]
+        st.session_state["dropbox_client"] = dropbox.Dropbox(dropbox_token)
+    return st.session_state["dropbox_client"]
+
 def build_dropbox_path(folder_key, filename):
     """Build a properly formatted Dropbox path from folder key and filename"""
-    folder_path = st.secrets.get(folder_key, '')
+    secrets = get_secrets()
+    folder_path = secrets.get(folder_key, '')
     if folder_path and not folder_path.startswith('/'):
         folder_path = '/' + folder_path
     if folder_path and not folder_path.endswith('/'):
@@ -281,8 +316,7 @@ def build_dropbox_path(folder_key, filename):
 
 def upload_to_dropbox(csv_data, filepath):
     """Upload CSV data to Dropbox at the specified filepath"""
-    dropbox_token = st.secrets["dropbox_access_token"]
-    dbx = dropbox.Dropbox(dropbox_token)
+    dbx = get_dropbox_client()
     csv_bytes = csv_data.encode('utf-8')
     dbx.files_upload(csv_bytes, filepath, mode=dropbox.files.WriteMode.overwrite)
 
@@ -299,8 +333,8 @@ if st.session_state["show_admin_login"] and not st.session_state["admin_logged_i
     show_admin_login()
 
 # Get API key from secrets
-anthropic_api_key = st.secrets['anthropic_api_key']
-
+secrets = get_secrets()
+anthropic_api_key = secrets['anthropic_api_key']
 
 # Use saved admin prompt if available, otherwise use default
 # If admin has set a custom system prompt, it completely replaces the default
@@ -356,13 +390,30 @@ if prompt := st.chat_input():
 
     st.chat_message("user").write(prompt)
 
-    # Create Claude chat model
-    chat = ChatAnthropic(
-        model=st.secrets.get("anthropic_model", "claude-3-5-sonnet-20241022"),
-        anthropic_api_key=anthropic_api_key,
-        temperature=st.secrets.get("anthropic_temperature", 0.7),
-        max_tokens=st.secrets.get("anthropic_max_tokens", 1024)
+    # Get or create cached Claude chat model
+    secrets = get_secrets()
+    model_config = {
+        "model": secrets.get("anthropic_model"),
+        "anthropic_api_key": anthropic_api_key,
+        "temperature": secrets.get("anthropic_temperature"),
+        "max_tokens": secrets.get("anthropic_max_tokens")
+    }
+    
+    # Check if model needs to be recreated (config changed or doesn't exist)
+    cached_config = st.session_state["chat_model_config"]
+    config_changed = (
+        cached_config is None or
+        cached_config.get("model") != model_config["model"] or
+        cached_config.get("anthropic_api_key") != model_config["anthropic_api_key"] or
+        cached_config.get("temperature") != model_config["temperature"] or
+        cached_config.get("max_tokens") != model_config["max_tokens"]
     )
+    
+    if st.session_state["chat_model"] is None or config_changed:
+        st.session_state["chat_model"] = ChatAnthropic(**model_config)
+        st.session_state["chat_model_config"] = model_config.copy()
+    
+    chat = st.session_state["chat_model"]
 
     # Prepare messages for LangChain (system prompt + conversation history)
     langchain_messages = [SystemMessage(content=system_prompt)]
