@@ -64,7 +64,7 @@ For archpal.org homepage:
 
 **Permanent (once deployed):**
 ```html
-<a href="URL to login page" 
+<a href="" 
    style="display: inline-block; padding: 12px 24px; background-color: #BA0C2F; 
    color: white; text-decoration: none; border-radius: 5px; font-weight: bold;">
   Login with UGA SSO
