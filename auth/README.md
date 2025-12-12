@@ -13,7 +13,10 @@ To see the actual webpages, you need to run Django locally:
 # Navigate to auth folder
 cd auth
 
-# Run the server
+# Start Tailwind (in one terminal)
+python manage.py tailwind start
+
+# Start Django server (in another terminal)
 python manage.py runserver
 
 # Open in browser
